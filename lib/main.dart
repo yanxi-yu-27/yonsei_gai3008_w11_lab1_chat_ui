@@ -36,12 +36,47 @@ class ChatPage extends StatefulWidget {
 
 class _ChatPageState extends State<ChatPage> {
   /// 실습용 가짜 대화 — API를 붙이기 전까지 이 목록으로 화면을 만든다.
-  final List<ChatMessage> _messages = const [
-    ChatMessage(text: '오늘 뭐 배워?', isUser: true),
-    ChatMessage(text: 'AI 챗봇에 움직이는 응답을 붙입니다.', isUser: false),
-    ChatMessage(text: '타이핑 점은 왜 필요해요?', isUser: true),
-    ChatMessage(text: '응답이 1초를 넘으면 앱이 멈춘 것처럼 보이기 때문입니다.', isUser: false),
+  final List<ChatMessage> _messages = [
   ];
+
+final TextEditingController _controller = TextEditingController();
+
+bool _sending = false;
+
+Future<void> _send() async {
+  final text = _controller.text.trim();
+
+  if (text.isEmpty || _sending) return;
+
+  setState(() {
+    _messages.add(ChatMessage(text: text, isUser: true));
+    _sending = true;
+  });
+
+  _controller.clear();
+
+  // 模拟 AI 思考 2 秒
+  await Future.delayed(const Duration(seconds: 2));
+
+  if (!mounted) return;
+
+  setState(() {
+    _messages.add(
+      ChatMessage(
+        text: '질문을 잘 받았습니다! AI가 답변을 준비했습니다.',
+        isUser: false,
+      ),
+    );
+    _sending = false;
+  });
+}
+
+@override
+void dispose() {
+  _controller.dispose();
+  super.dispose();
+}
+
 
   @override
   Widget build(BuildContext context) {
@@ -59,18 +94,40 @@ class _ChatPageState extends State<ChatPage> {
             //    · reverse:true면 index 0이 화면 맨 아래(최신)다.
             //    · 그래서 _messages[length - 1 - i]로 거꾸로 꺼낸다.
             // ─────────────────────────────────────────────────────────
-            Expanded(
-              child: ListView.builder(
-                reverse: true,
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                itemCount: _messages.length,
-                itemBuilder: (context, index) {
-                  final message =
-                      _messages[_messages.length - 1 - index];
-                  return _Bubble(message: message);
-                },
-              ),
+           
+Expanded(
+  child: Stack(
+    children: [
+      ListView.builder(
+        reverse: true,
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        itemCount: _messages.length,
+        itemBuilder: (context, index) {
+          final message =
+              _messages[_messages.length - 1 - index];
+          return _Bubble(message: message);
+        },
+      ),
+      if (_sending)
+       const Positioned(
+       left: 12,
+        bottom: 12,
+       child: _TypingDots(),
+  ),
+      if (_messages.isEmpty)
+        const Center(
+          child: Text(
+            '무엇이든 물어보세요',
+            style: TextStyle(
+              fontSize: 18,
+              color: Colors.grey,
             ),
+          ),
+        ),
+    ],
+  ),
+),
+
 
             // ─────────────────────────────────────────────────────────
             // TODO 4 — 빈 상태
@@ -90,7 +147,31 @@ class _ChatPageState extends State<ChatPage> {
             //  · 보낼 때 _controller.clear() 하고 setState로 목록에 추가한다.
             //  · dispose()에서 _controller.dispose()를 잊지 않는다.
             // ─────────────────────────────────────────────────────────
-            const _TodoBar(label: 'TODO 3 — 여기에 입력창을 만든다'),
+            
+Padding(
+  padding: const EdgeInsets.all(12),
+  child: Row(
+    children: [
+      Expanded(
+        child: TextField(
+          controller: _controller,
+          enabled: !_sending,
+          decoration: const InputDecoration(
+            hintText: '무엇이든 물어보세요',
+            border: OutlineInputBorder(),
+          ),
+          onSubmitted: (_) => _send(),
+        ),
+      ),
+      const SizedBox(width: 8),
+      IconButton.filled(
+        icon: const Icon(Icons.send),
+        onPressed: _sending ? null : _send,
+      ),
+    ],
+  ),
+),
+
           ],
         ),
       ),
@@ -118,6 +199,7 @@ class _ChatPageState extends State<ChatPage> {
 ///  · 색은 Theme.of(context).colorScheme에서 꺼내면 다크 모드에서도 안전하다.
 ///  · 긴 글은 자동으로 줄바꿈된다. maxWidth만 잡아 주면 된다.
 /// ───────────────────────────────────────────────────────────────
+
 class _Bubble extends StatelessWidget {
   const _Bubble({required this.message});
 
@@ -125,13 +207,34 @@ class _Bubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      child: Text(message.text),
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Align(
+      alignment: message.isUser
+          ? Alignment.centerRight
+          : Alignment.centerLeft,
+      child: Container(
+        margin: const EdgeInsets.symmetric(
+          horizontal: 12,
+          vertical: 4,
+        ),
+        padding: const EdgeInsets.symmetric(
+          horizontal: 12,
+          vertical: 10,
+        ),
+        constraints: const BoxConstraints(maxWidth: 420),
+        decoration: BoxDecoration(
+          color: message.isUser
+              ? colorScheme.primaryContainer
+              : colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Text(message.text),
+      ),
     );
   }
 }
+
 
 /// TODO 3이 끝나면 지운다. 지금은 입력창 자리를 보여 주는 표시일 뿐이다.
 class _TodoBar extends StatelessWidget {
@@ -163,3 +266,72 @@ class _TodoBar extends StatelessWidget {
     );
   }
 }
+
+class _TypingDots extends StatefulWidget {
+  const _TypingDots();
+
+  @override
+  State<_TypingDots> createState() => _TypingDotsState();
+}
+
+class _TypingDotsState extends State<_TypingDots>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _animation;
+
+  @override
+  void initState() {
+    super.initState();
+    _animation = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _animation.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: 14,
+        vertical: 12,
+      ),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: AnimatedBuilder(
+        animation: _animation,
+        builder: (context, child) {
+          return Row(
+            mainAxisSize: MainAxisSize.min,
+            children: List.generate(3, (index) {
+              final active =
+                  (_animation.value * 3).floor() == index;
+
+              return Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 3),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  width: 7,
+                  height: 7,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: active
+                        ? Theme.of(context).colorScheme.primary
+                        : Colors.grey.shade400,
+                  ),
+                ),
+              );
+            }),
+          );
+        },
+      ),
+    );
+  }
+}
+
