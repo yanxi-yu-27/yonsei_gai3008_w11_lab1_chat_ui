@@ -43,33 +43,94 @@ final TextEditingController _controller = TextEditingController();
 
 bool _sending = false;
 
-Future<void> _send() async {
-  final text = _controller.text.trim();
+String? _errorMessage;
+String? _lastSentText;
+int _retry429Count = 0;
+Future<String> _simulateApi(String text) async {
+  await Future.delayed(const Duration(seconds: 2));
+
+  switch (text.trim().toLowerCase()) {
+    case '401':
+      throw Exception('401');
+    case '429':
+      throw Exception('429');
+    case '500':
+      throw Exception('500');
+    case 'timeout':
+      throw Exception('timeout');
+    default:
+      return '질문을 잘 받았습니다! AI가 답변을 준비했습니다.';
+  }
+}
+
+Future<void> _send({bool isRetry = false}) async {
+ final text = isRetry
+    ? (_lastSentText ?? '')
+    : _controller.text.trim();
 
   if (text.isEmpty || _sending) return;
 
-  setState(() {
+  
+setState(() {
+  if (!isRetry) {
     _messages.add(ChatMessage(text: text, isUser: true));
-    _sending = true;
-  });
+    _lastSentText = text;
+  }
 
+  _errorMessage = null;
+  _sending = true;
+});
+
+if (!isRetry) {
   _controller.clear();
-
-  // 模拟 AI 思考 2 秒
-  await Future.delayed(const Duration(seconds: 2));
-
-  if (!mounted) return;
-
-  setState(() {
-    _messages.add(
-      ChatMessage(
-        text: '질문을 잘 받았습니다! AI가 답변을 준비했습니다.',
-        isUser: false,
-      ),
-    );
-    _sending = false;
-  });
 }
+
+
+  try {
+    final response = await _simulateApi(text);
+
+    if (!mounted) return;
+
+    setState(() {
+      _messages.add(
+        ChatMessage(text: response, isUser: false),
+      );
+    });
+  } catch (e) {
+    if (!mounted) return;
+
+    final error = e.toString();
+
+    setState(() {
+      if (error.contains('401')) {
+        _errorMessage = '401: 인증에 실패했습니다.';
+      } else if (error.contains('429')) {
+       _retry429Count++;
+_errorMessage = '429: 요청이 너무 많습니다. '
+    '${_retry429Count == 1 ? 1 : 2}초 후 다시 시도해 주세요.';
+      } else if (error.contains('500')) {
+        _errorMessage = '500: 서버 오류가 발생했습니다.';
+      } else if (error.contains('timeout')) {
+        _errorMessage = '요청 시간이 초과되었습니다.';
+      } else {
+        _errorMessage = '응답에 실패했습니다.';
+      }
+    });
+if (error.contains('429')) {
+  await Future.delayed(
+    Duration(seconds: _retry429Count == 1 ? 1 : 2),
+  );
+}
+
+  } finally {
+    if (mounted) {
+      setState(() {
+        _sending = false;
+      });
+    }
+  }
+}
+
 
 @override
 void dispose() {
@@ -147,6 +208,51 @@ Expanded(
             //  · 보낼 때 _controller.clear() 하고 setState로 목록에 추가한다.
             //  · dispose()에서 _controller.dispose()를 잊지 않는다.
             // ─────────────────────────────────────────────────────────
+
+
+AnimatedSwitcher(
+  duration: const Duration(milliseconds: 300),
+  transitionBuilder: (child, animation) {
+    return FadeTransition(
+      opacity: animation,
+      child: child,
+    );
+  },
+  child: _errorMessage != null
+      ? Padding(
+          key: const ValueKey('error'),
+          padding: const EdgeInsets.symmetric(
+            horizontal: 12,
+            vertical: 6,
+          ),
+          child: Row(
+            children: [
+              const Icon(
+                Icons.error_outline,
+                color: Colors.red,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  _errorMessage!,
+                  style: const TextStyle(color: Colors.red),
+                ),
+              ),
+              const SizedBox(width: 8),
+              TextButton(
+                onPressed: _sending || _lastSentText == null
+                    ? null
+                    : () => _send(isRetry: true),
+                child: const Text('다시 시도'),
+              ),
+            ],
+          ),
+        )
+      : const SizedBox.shrink(
+          key: ValueKey('no_error'),
+        ),
+),
+
             
 Padding(
   padding: const EdgeInsets.all(12),
